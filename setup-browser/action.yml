@@ -1,0 +1,59 @@
+name: Set up a browser for Playwright
+description: >
+  Points playwright-core at the Google Chrome the runner already has, through CHROME_PATH, so a job
+  downloads no browser and runs no apt. On a runner without Chrome, it installs Playwright's own
+  Chromium from a cache instead, without --with-deps.
+
+inputs:
+  working-directory:
+    description: Where playwright-core is installed. Used only when the runner has no Chrome.
+    default: .
+  force-download:
+    description: Skip the runner's Chrome and install Playwright's Chromium, to test the fallback.
+    default: "false"
+
+outputs:
+  chrome-path:
+    description: The browser CHROME_PATH was set to, or empty when Playwright's own Chromium is used.
+    value: ${{ steps.find.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - id: find
+      shell: bash
+      env:
+        FORCE: ${{ inputs.force-download }}
+      run: |
+        path=""
+        if [ "$FORCE" != "true" ]; then
+          for c in google-chrome-stable google-chrome; do
+            if p=$(command -v "$c"); then path=$p; break; fi
+          done
+        fi
+        if [ -n "$path" ]; then
+          echo "CHROME_PATH=$path" >> "$GITHUB_ENV"
+          echo "Using the runner's browser: $path ($("$path" --version))"
+        else
+          echo "No runner Chrome used; installing Playwright's Chromium."
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - id: version
+      if: steps.find.outputs.path == ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: echo "playwright=$(npx --no-install playwright-core --version | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+
+    - if: steps.find.outputs.path == ''
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.playwright }}
+
+    # No --with-deps. The runner image has Chromium's shared libraries already, and the fonts
+    # --with-deps adds came from a mirror that stalled for minutes at a time (panyam/goapplib#191).
+    - if: steps.find.outputs.path == ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npx --no-install playwright-core install chromium

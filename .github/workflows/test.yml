@@ -1,0 +1,46 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-browser:
+    name: setup-browser (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [runner-chrome, download]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install playwright-core
+        working-directory: test
+        run: npm install --no-audit --no-fund
+
+      - id: browser
+        uses: ./setup-browser
+        with:
+          working-directory: test
+          force-download: ${{ matrix.mode == 'download' }}
+
+      - name: Check which browser was chosen
+        env:
+          MODE: ${{ matrix.mode }}
+          CHOSEN: ${{ steps.browser.outputs.chrome-path }}
+        run: |
+          if [ "$MODE" = runner-chrome ] && [ -z "$CHOSEN" ]; then echo "the runner has no Chrome"; exit 1; fi
+          if [ "$MODE" = download ] && [ -n "$CHOSEN" ]; then echo "force-download still chose $CHOSEN"; exit 1; fi
+
+      - name: Launch it
+        working-directory: test
+        run: node launch.mjs
