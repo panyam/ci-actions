@@ -75,6 +75,27 @@ Sets up Go, pnpm and Node, then runs `pnpm install --frozen-lockfile`, for a job
 
 Other inputs are `go-version-file` (default `go.mod`), `go-cache-dependency-path` (default: setup-go's), `node-version` (default `22`) and `install` (default `true`).
 
+## go-build-cache
+
+Restores Go's build cache from the newest earlier run of the same job, and saves it from the default branch only. Packages that did not change then compile from cache on every branch.
+
+```yaml
+- uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+  with:
+    go-version-file: go.mod
+- uses: panyam/ci-actions/go-build-cache@v0.1.2
+  with:
+    key: browser
+- run: make browser-test
+```
+
+- setup-go's own cache is keyed on `go.sum`, so it misses after every dependency bump. Only one job saves it, and that job may not build what yours builds. A `GOOS=js` build, for one, never comes from it.
+- Each save from the default branch is a new entry named for the run, and a restore takes the newest entry with the job's `key`, Go version, OS and architecture. Go's build cache is addressed by content, so an entry from an older commit still serves every package that has not changed.
+- A pull request reads the default branch's entries and saves none, so pull requests don't push the default branch's entries out of the repo's 10 GB cache.
+- Go on PATH is required, so run setup-go first.
+
+Inputs are `key` (default `default`), naming the job's builds so jobs that build different packages keep separate entries, and `save` (`auto`, `true` or `false`, default `auto`). The output `matched-key` names the entry restored when the run does not save.
+
 ## npm-publish (reusable workflow)
 
 Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.

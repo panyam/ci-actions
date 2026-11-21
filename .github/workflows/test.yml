@@ -150,3 +150,52 @@ jobs:
       tag: v0.0.0
       dry-run: true
       test-command: node -e "if (require('./index.js') !== 1) process.exit(1)"
+
+  # One job builds and saves under a key unique to this run, and the next restores it. The second
+  # job does not save, so it reports the entry it restored.
+  go-build-cache-save:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: test/go-pnpm/go.mod
+          cache: false
+
+      - uses: ./go-build-cache
+        with:
+          key: test-${{ github.run_id }}-${{ github.run_attempt }}
+          save: "true"
+
+      - name: Build
+        working-directory: test/go-pnpm
+        run: go build -o /dev/null .
+
+  go-build-cache-restore:
+    needs: go-build-cache-save
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: test/go-pnpm/go.mod
+          cache: false
+
+      - id: cache
+        uses: ./go-build-cache
+        with:
+          key: test-${{ github.run_id }}-${{ github.run_attempt }}
+          save: "false"
+
+      - name: Check the saved cache came back
+        env:
+          MATCHED: ${{ steps.cache.outputs.matched-key }}
+          WANT: go-build-test-${{ github.run_id }}-${{ github.run_attempt }}-
+        run: |
+          echo "restored: $MATCHED"
+          case "$MATCHED" in "$WANT"*) ;; *) echo "want an entry starting $WANT"; exit 1 ;; esac
+          n=$(find "$(go env GOCACHE)" -type f | wc -l)
+          echo "$n files in the build cache"
+          [ "$n" -gt 100 ]
