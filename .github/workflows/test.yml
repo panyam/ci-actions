@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -44,3 +44,22 @@ jobs:
       - name: Launch it
         working-directory: test
         run: node launch.mjs
+
+  # The publish workflow end to end, publishing with --dry-run. The fixtures aren't on npm, so the
+  # job gets past the already-published check to the publish step.
+  npm-publish:
+    name: npm-publish (${{ matrix.package-manager }})
+    strategy:
+      fail-fast: false
+      matrix:
+        package-manager: [npm, pnpm]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      working-directory: test/npm-publish/${{ matrix.package-manager }}
+      package-manager: ${{ matrix.package-manager }}
+      tag: v0.0.0
+      dry-run: true
+      test-command: node -e "if (require('./index.js') !== 1) process.exit(1)"
