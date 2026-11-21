@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -44,3 +44,45 @@ jobs:
       - name: Launch it
         working-directory: test
         run: node launch.mjs
+
+  setup-go-pnpm:
+    name: setup-go-pnpm (${{ matrix.pnpm }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pnpm: explicit
+            dir: test/go-pnpm/web-explicit
+            version: "12"
+          - pnpm: packageManager
+            dir: test/go-pnpm/web-pinned
+            version: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./setup-go-pnpm
+        with:
+          go-version-file: test/go-pnpm/go.mod
+          go-cache-dependency-path: test/go-pnpm/go.sum
+          pnpm-version: ${{ matrix.version }}
+          working-directory: ${{ matrix.dir }}
+
+      - name: Go builds
+        working-directory: test/go-pnpm
+        run: go build -o /dev/null . && go version | grep -q go1.27
+
+      - name: The pnpm project is installed
+        working-directory: ${{ matrix.dir }}
+        run: node -e "if (!require('is-number')(5)) process.exit(1)"
+
+      - name: pnpm is the version asked for
+        env:
+          MODE: ${{ matrix.pnpm }}
+        run: |
+          v="$(pnpm --version)"
+          echo "pnpm $v"
+          case "$MODE" in
+            explicit) [[ "$v" == 12.* ]] ;;
+            packageManager) [ "$v" = 12.11.2 ] ;;
+          esac

@@ -28,3 +28,20 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 Inputs are `working-directory` (default `.`) and `force-download` (default `false`). The output `chrome-path` is the browser `CHROME_PATH` was set to, or empty.
 
 The `test` workflow runs both paths on every push.
+
+## setup-go-pnpm
+
+Sets up Go, pnpm and Node, then runs `pnpm install --frozen-lockfile`, for a job with a Go module and a pnpm frontend.
+
+```yaml
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+- uses: panyam/ci-actions/setup-go-pnpm@v0.1.1
+  with:
+    working-directory: web
+```
+
+- With no `pnpm-version`, pnpm comes from the `packageManager` field in `working-directory`'s package.json, so a developer's pnpm and CI's match. Setting both fails, since pnpm/action-setup refuses two versions.
+- Node's pnpm cache is keyed on `working-directory`'s `pnpm-lock.yaml`.
+- `go-cache: false` turns off setup-go's cache, for a job that keeps its own.
+
+Other inputs are `go-version-file` (default `go.mod`), `go-cache-dependency-path` (default: setup-go's), `node-version` (default `22`) and `install` (default `true`).
