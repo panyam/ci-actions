@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -44,3 +44,48 @@ jobs:
       - name: Launch it
         working-directory: test
         run: node launch.mjs
+
+  vulncheck-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Test the issue reporter
+        run: node --test test/vulncheck/report.test.mjs
+
+  vulncheck-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./vulncheck
+        with:
+          working-directory: test/vulncheck/clean
+          go-version-file: test/vulncheck/clean/go.mod
+          cache-dependency-path: test/vulncheck/clean/go.sum
+
+  # A failing scan has to fail the job. report is false, so nothing gets filed in this repo.
+  vulncheck-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: scan
+        continue-on-error: true
+        uses: ./vulncheck
+        with:
+          command: exit 3
+          report: "false"
+          working-directory: test/vulncheck/clean
+          go-version-file: test/vulncheck/clean/go.mod
+          cache-dependency-path: test/vulncheck/clean/go.sum
+
+      - name: Check the scan failed the step
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then echo "a scan that exited 3 left the step at $OUTCOME"; exit 1; fi

@@ -28,3 +28,33 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 Inputs are `working-directory` (default `.`) and `force-download` (default `false`). The output `chrome-path` is the browser `CHROME_PATH` was set to, or empty.
 
 The `test` workflow runs both paths on every push.
+
+## vulncheck
+
+Runs govulncheck, or your own scan command. When the scan fails, the action files an issue, and while that issue is open each later failure adds a comment to it.
+
+```yaml
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: panyam/ci-actions/vulncheck@v0.1.1
+```
+
+- With no `command`, it runs a pinned `govulncheck ./...` in `working-directory`. A repo with several modules usually has a Makefile target that scans each one, so it passes `command: make vulncheck`.
+- The issue's title starts with `title-prefix` (default `vulncheck:`), and it gets `labels` (default `P1,bug`). An open issue with that prefix gets a comment instead of a second issue.
+- `report: false` fails the job without filing anything.
+- The job needs `issues: write`.
+
+Other inputs are `go-version-file` (default `go.mod`) and `cache-dependency-path` (default `**/go.sum`).
+
