@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "A package the npm-publish workflow test publishes with --dry-run. Never published.",
   "main": "index.js",
-  "files": ["index.js"],
+  "files": ["index.js", "index.test.js"],
   "license": "Apache-2.0",
   "scripts": { "build": "node -e \"require('fs').writeFileSync('index.js', 'module.exports = 1;\\n')\"" }
 }
