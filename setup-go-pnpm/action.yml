@@ -1,0 +1,50 @@
+name: setup-go-pnpm
+description: Sets up Go, pnpm and Node, then installs a pnpm project, for a job that needs a Go module and a pnpm frontend.
+
+inputs:
+  go-version-file:
+    description: The go.mod that sets the Go version, relative to the repo root.
+    default: go.mod
+  go-cache:
+    description: Set to false when the job keeps its own Go cache.
+    default: "true"
+  go-cache-dependency-path:
+    description: The go.sum files the Go cache is keyed on. Empty means setup-go's default, the go.sum at the repo root.
+    default: ""
+  node-version:
+    description: The Node version.
+    default: "22"
+  pnpm-version:
+    description: The pnpm version. Empty means the packageManager field of working-directory's package.json, so a developer's pnpm and CI's match.
+    default: ""
+  working-directory:
+    description: The pnpm project, holding package.json and pnpm-lock.yaml.
+    default: .
+  install:
+    description: Set to false to skip pnpm install.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache: ${{ inputs.go-cache }}
+        cache-dependency-path: ${{ inputs.go-cache-dependency-path }}
+
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      with:
+        version: ${{ inputs.pnpm-version }}
+        package_json_file: ${{ inputs.working-directory }}/package.json
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+    - if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile

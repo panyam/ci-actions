@@ -28,3 +28,74 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 Inputs are `working-directory` (default `.`) and `force-download` (default `false`). The output `chrome-path` is the browser `CHROME_PATH` was set to, or empty.
 
 The `test` workflow runs both paths on every push.
+
+## vulncheck
+
+Runs govulncheck, or your own scan command. When the scan fails, the action files an issue, and while that issue is open each later failure adds a comment to it.
+
+```yaml
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: panyam/ci-actions/vulncheck@v0.1.1
+```
+
+- With no `command`, it runs a pinned `govulncheck ./...` in `working-directory`. A repo with several modules usually has a Makefile target that scans each one, so it passes `command: make vulncheck`.
+- The issue's title starts with `title-prefix` (default `vulncheck:`), and it gets `labels` (default `P1,bug`). An open issue with that prefix gets a comment instead of a second issue.
+- `report: false` fails the job without filing anything.
+- The job needs `issues: write`.
+
+Other inputs are `go-version-file` (default `go.mod`) and `cache-dependency-path` (default `**/go.sum`).
+
+## setup-go-pnpm
+
+Sets up Go, pnpm and Node, then runs `pnpm install --frozen-lockfile`, for a job with a Go module and a pnpm frontend.
+
+```yaml
+- uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+- uses: panyam/ci-actions/setup-go-pnpm@v0.1.1
+  with:
+    working-directory: web
+```
+
+- With no `pnpm-version`, pnpm comes from the `packageManager` field in `working-directory`'s package.json, so a developer's pnpm and CI's match. Setting both fails, since pnpm/action-setup refuses two versions.
+- Node's pnpm cache is keyed on `working-directory`'s `pnpm-lock.yaml`.
+- `go-cache: false` turns off setup-go's cache, for a job that keeps its own.
+
+Other inputs are `go-version-file` (default `go.mod`), `go-cache-dependency-path` (default: setup-go's), `node-version` (default `22`) and `install` (default `true`).
+
+## npm-publish (reusable workflow)
+
+Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
+
+```yaml
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    uses: panyam/ci-actions/.github/workflows/npm-publish.yml@v0.1.1
+    with:
+      working-directory: ts
+```
+
+- It checks that the tag, less `tag-prefix` (default `v`), matches package.json's version. Then it installs, runs `npm run build` if there is one, and runs `test-command` if given.
+- It refuses a tarball with `.test.` files in it, and skips a version npm already has.
+- On npm, the package's trusted publisher names the caller's repo and workflow file, not this one: `npm trust github <package> --repo <owner>/<repo> --file publish-npm.yml --allow-publish`.
+- `package-manager: pnpm` installs with `pnpm install --frozen-lockfile --ignore-scripts`. Publishing always uses npm.
+
+Other inputs are `node-version` (default `24`), `pnpm-version` (default `12`), and two for testing, `tag` and `dry-run`.

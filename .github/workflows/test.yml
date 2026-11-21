@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -44,3 +44,109 @@ jobs:
       - name: Launch it
         working-directory: test
         run: node launch.mjs
+
+  vulncheck-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Test the issue reporter
+        run: node --test test/vulncheck/report.test.mjs
+
+  vulncheck-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./vulncheck
+        with:
+          working-directory: test/vulncheck/clean
+          go-version-file: test/vulncheck/clean/go.mod
+          cache-dependency-path: test/vulncheck/clean/go.sum
+
+  # A failing scan has to fail the job. report is false, so nothing gets filed in this repo.
+  vulncheck-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: scan
+        continue-on-error: true
+        uses: ./vulncheck
+        with:
+          command: exit 3
+          report: "false"
+          working-directory: test/vulncheck/clean
+          go-version-file: test/vulncheck/clean/go.mod
+          cache-dependency-path: test/vulncheck/clean/go.sum
+
+      - name: Check the scan failed the step
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then echo "a scan that exited 3 left the step at $OUTCOME"; exit 1; fi
+
+  setup-go-pnpm:
+    name: setup-go-pnpm (${{ matrix.pnpm }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pnpm: explicit
+            dir: test/go-pnpm/web-explicit
+            version: "12"
+          - pnpm: packageManager
+            dir: test/go-pnpm/web-pinned
+            version: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./setup-go-pnpm
+        with:
+          go-version-file: test/go-pnpm/go.mod
+          go-cache-dependency-path: test/go-pnpm/go.sum
+          pnpm-version: ${{ matrix.version }}
+          working-directory: ${{ matrix.dir }}
+
+      - name: Go builds
+        working-directory: test/go-pnpm
+        run: go build -o /dev/null . && go version | grep -q go1.27
+
+      - name: The pnpm project is installed
+        working-directory: ${{ matrix.dir }}
+        run: node -e "if (!require('is-number')(5)) process.exit(1)"
+
+      - name: pnpm is the version asked for
+        env:
+          MODE: ${{ matrix.pnpm }}
+        run: |
+          v="$(pnpm --version)"
+          echo "pnpm $v"
+          case "$MODE" in
+            explicit) [[ "$v" == 12.* ]] ;;
+            packageManager) [ "$v" = 12.11.2 ] ;;
+          esac
+
+  # The publish workflow end to end, publishing with --dry-run. The fixtures aren't on npm, so the
+  # job gets past the already-published check to the publish step.
+  npm-publish:
+    name: npm-publish (${{ matrix.package-manager }})
+    strategy:
+      fail-fast: false
+      matrix:
+        package-manager: [npm, pnpm]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      working-directory: test/npm-publish/${{ matrix.package-manager }}
+      package-manager: ${{ matrix.package-manager }}
+      tag: v0.0.0
+      dry-run: true
+      test-command: node -e "if (require('./index.js') !== 1) process.exit(1)"

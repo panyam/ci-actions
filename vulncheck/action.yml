@@ -1,0 +1,73 @@
+name: vulncheck
+description: Runs govulncheck (or your own scan command), and files an issue when it fails.
+
+inputs:
+  command:
+    description: The scan to run. The default scans every package of the module at the repo root. A repo with several modules usually passes "make vulncheck".
+    default: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
+  working-directory:
+    description: Where the command runs.
+    default: .
+  go-version-file:
+    description: The go.mod that sets the Go version, relative to the repo root.
+    default: go.mod
+  cache-dependency-path:
+    description: The go.sum files the Go module cache is keyed on.
+    default: "**/go.sum"
+  labels:
+    description: Comma-separated labels for the issue the action files.
+    default: P1,bug
+  title-prefix:
+    description: The filed issue's title starts with this. An open issue with this prefix gets a comment instead of a second issue.
+    default: "vulncheck:"
+  report:
+    description: Set to false to fail without filing or commenting.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+    # The scan's exit status is kept rather than failing this step, so the report step runs and
+    # the last step fails the job with the scan's own status.
+    - id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        COMMAND: ${{ inputs.command }}
+      run: |
+        set +e -o pipefail
+        bash -c "$COMMAND" 2>&1 | tee "$RUNNER_TEMP/vulncheck.log"
+        echo "status=$?" >> "$GITHUB_OUTPUT"
+
+    - if: steps.scan.outputs.status != '0' && inputs.report == 'true'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        REPORT_JS: ${{ github.action_path }}/report.js
+        COMMAND: ${{ inputs.command }}
+        TITLE_PREFIX: ${{ inputs.title-prefix }}
+        LABELS: ${{ inputs.labels }}
+      with:
+        script: |
+          const fs = require('fs');
+          const report = require(process.env.REPORT_JS);
+          const result = await report({
+            github, context,
+            log: fs.readFileSync(`${process.env.RUNNER_TEMP}/vulncheck.log`, 'utf8'),
+            command: process.env.COMMAND,
+            titlePrefix: process.env.TITLE_PREFIX,
+            labels: process.env.LABELS.split(',').map((l) => l.trim()).filter(Boolean),
+          });
+          core.info(JSON.stringify(result));
+
+    - if: steps.scan.outputs.status != '0'
+      shell: bash
+      env:
+        STATUS: ${{ steps.scan.outputs.status }}
+      run: |
+        echo "the scan exited with status $STATUS"
+        exit "$STATUS"
