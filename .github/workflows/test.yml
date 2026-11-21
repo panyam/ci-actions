@@ -131,3 +131,22 @@ jobs:
             explicit) [[ "$v" == 12.* ]] ;;
             packageManager) [ "$v" = 12.11.2 ] ;;
           esac
+
+  # The publish workflow end to end, publishing with --dry-run. The fixtures aren't on npm, so the
+  # job gets past the already-published check to the publish step.
+  npm-publish:
+    name: npm-publish (${{ matrix.package-manager }})
+    strategy:
+      fail-fast: false
+      matrix:
+        package-manager: [npm, pnpm]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/npm-publish.yml
+    with:
+      working-directory: test/npm-publish/${{ matrix.package-manager }}
+      package-manager: ${{ matrix.package-manager }}
+      tag: v0.0.0
+      dry-run: true
+      test-command: node -e "if (require('./index.js') !== 1) process.exit(1)"

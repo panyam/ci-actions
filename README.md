@@ -74,3 +74,28 @@ Sets up Go, pnpm and Node, then runs `pnpm install --frozen-lockfile`, for a job
 - `go-cache: false` turns off setup-go's cache, for a job that keeps its own.
 
 Other inputs are `go-version-file` (default `go.mod`), `go-cache-dependency-path` (default: setup-go's), `node-version` (default `22`) and `install` (default `true`).
+
+## npm-publish (reusable workflow)
+
+Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
+
+```yaml
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    uses: panyam/ci-actions/.github/workflows/npm-publish.yml@v0.1.1
+    with:
+      working-directory: ts
+```
+
+- It checks that the tag, less `tag-prefix` (default `v`), matches package.json's version. Then it installs, runs `npm run build` if there is one, and runs `test-command` if given.
+- It refuses a tarball with `.test.` files in it, and skips a version npm already has.
+- On npm, the package's trusted publisher names the caller's repo and workflow file, not this one: `npm trust github <package> --repo <owner>/<repo> --file publish-npm.yml --allow-publish`.
+- `package-manager: pnpm` installs with `pnpm install --frozen-lockfile --ignore-scripts`. Publishing always uses npm.
+
+Other inputs are `node-version` (default `24`), `pnpm-version` (default `12`), and two for testing, `tag` and `dry-run`.

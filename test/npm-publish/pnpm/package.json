@@ -1,0 +1,9 @@
+{
+  "name": "@panyam/ci-actions-fixture-pnpm",
+  "version": "0.0.0",
+  "description": "A package the npm-publish workflow test publishes with --dry-run. Never published.",
+  "main": "index.js",
+  "files": ["index.js"],
+  "license": "Apache-2.0",
+  "scripts": { "build": "node -e \"require('fs').writeFileSync('index.js', 'module.exports = 1;\\n')\"" }
+}
