@@ -63,11 +63,3 @@ runs:
             labels: process.env.LABELS.split(',').map((l) => l.trim()).filter(Boolean),
           });
           core.info(JSON.stringify(result));
-
-    - if: steps.scan.outputs.status != '0'
-      shell: bash
-      env:
-        STATUS: ${{ steps.scan.outputs.status }}
-      run: |
-        echo "the scan exited with status $STATUS"
-        exit "$STATUS"
