@@ -106,7 +106,7 @@ permissions:
   packages: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  - uses: panyam/ci-actions/helm-oci-publish@v0.2.0
+  - uses: panyam/ci-actions/helm-oci-publish@v0.1.3
     with:
       chart: deploy/helm/agni
       version: ${{ github.ref_name }}
@@ -128,7 +128,7 @@ Creates a kind cluster with ports 80 and 443 mapped to the runner, installs an i
 ```yaml
 - run: docker build -t agni:dev .
 - id: kind
-  uses: panyam/ci-actions/kind-ingress@v0.2.0
+  uses: panyam/ci-actions/kind-ingress@v0.1.3
   with:
     images: agni:dev
 - run: helm install agni deploy/helm/agni --set image.tag=dev --wait
@@ -148,7 +148,7 @@ Other inputs are `name` (default `kind`) and `node-image`, which sets the Kubern
 Brings up a docker compose project and waits for it to answer. At the job's end it prints the logs and tears the project down.
 
 ```yaml
-- uses: panyam/ci-actions/compose-up@v0.2.0
+- uses: panyam/ci-actions/compose-up@v0.1.3
   with:
     file: deploy/compose.yaml
     env-file: deploy/ci.env
@@ -170,7 +170,7 @@ Starts a proxy that logs every request it gets and answers 502. At the job's end
 
 ```yaml
 - id: trap
-  uses: panyam/ci-actions/egress-trap@v0.2.0
+  uses: panyam/ci-actions/egress-trap@v0.1.3
 - run: hack/exercise_enterprise.sh
   env:
     HTTP_PROXY: ${{ steps.trap.outputs.url }}
