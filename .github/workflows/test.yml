@@ -334,3 +334,39 @@ jobs:
           OUTCOME: ${{ steps.up.outcome }}
         run: |
           if [ "$OUTCOME" != failure ]; then echo "a dead wait-url left the step at $OUTCOME"; exit 1; fi
+
+  egress-trap-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Test the trap's start, log and verdict
+        run: node --test test/egress/trap.test.mjs
+
+  # fail is false, so the job passes and the post step only reports. The unit test covers failing.
+  egress-trap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: trap
+        uses: ./egress-trap
+        with:
+          fail: "false"
+
+      - name: Send a request and a CONNECT through the trap
+        env:
+          http_proxy: ${{ steps.trap.outputs.url }}
+          https_proxy: ${{ steps.trap.outputs.url }}
+          LOG: ${{ steps.trap.outputs.log }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://example.invalid/)
+          [ "$code" = 502 ] || { echo "the trap answered $code"; exit 1; }
+          if curl -s -o /dev/null https://example.invalid/; then echo "a CONNECT got through"; exit 1; fi
+          cat "$LOG"
+          grep -qP "^example\.invalid\tGET http://example\.invalid/" "$LOG"
+          grep -qP "^example\.invalid:443\tCONNECT example\.invalid:443" "$LOG"

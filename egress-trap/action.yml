@@ -1,0 +1,22 @@
+name: egress-trap
+description: Starts a proxy that logs and refuses every request it gets, and fails the job at its end if anything reached it.
+
+inputs:
+  address:
+    description: Where the proxy listens, host:port. Port 0 picks a free one. Use a container network's gateway, such as kind-ingress's gateway output, for traffic from containers.
+    default: 127.0.0.1:0
+  fail:
+    description: Set to false to only report what reached the trap, for a job that checks the log itself.
+    default: "true"
+
+outputs:
+  url:
+    description: The proxy's URL, for HTTP_PROXY and HTTPS_PROXY. The caller sets NO_PROXY for the hosts it allows.
+  log:
+    description: The log's path. Each line is "<host><TAB><request line>".
+
+runs:
+  using: node24
+  main: main.js
+  post: post.js
+  post-if: always()

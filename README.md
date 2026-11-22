@@ -164,6 +164,28 @@ Brings up a docker compose project and waits for it to answer. At the job's end 
 
 Other inputs are `file` (default `compose.yaml`, or several, one per line) and `services` (default all).
 
+## egress-trap
+
+Starts a proxy that logs every request it gets and answers 502. At the job's end it fails the job if anything reached it.
+
+```yaml
+- id: trap
+  uses: panyam/ci-actions/egress-trap@v0.2.0
+- run: hack/exercise_enterprise.sh
+  env:
+    HTTP_PROXY: ${{ steps.trap.outputs.url }}
+    HTTPS_PROXY: ${{ steps.trap.outputs.url }}
+    NO_PROXY: 127.0.0.1,localhost
+```
+
+- A server that promises to reach only the hosts it names sends everything else through the proxy. `NO_PROXY` lists the hosts it may reach.
+- Each line of the log is the host, a tab, then the request line, or `CONNECT host:443` for HTTPS.
+- At the job's end it stops the proxy. If the log isn't empty, it fails the job with one error per host.
+- `fail: false` reports without failing, for a job that checks the log itself.
+- `address` (default `127.0.0.1:0`) sets where it listens, with port 0 picking a free one. To trap traffic from containers, pass a network's gateway, such as kind-ingress's `gateway` output, with a fixed port.
+
+Outputs are `url`, for `HTTP_PROXY` and `HTTPS_PROXY`, and `log`, the log's path.
+
 ## npm-publish (reusable workflow)
 
 Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
