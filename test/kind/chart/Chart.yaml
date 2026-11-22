@@ -1,0 +1,4 @@
+apiVersion: v2
+name: hello
+description: One pod behind an Ingress, for kind-ingress's test.
+version: 0.1.0

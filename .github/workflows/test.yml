@@ -250,3 +250,42 @@ jobs:
           [ "$REF" = localhost:5000/charts/sample:1.2.3 ]
           echo "$DIGEST" | grep -Eqx 'sha256:[0-9a-f]{64}'
           helm show chart oci://localhost:5000/charts/sample --version 1.2.3 --plain-http | grep -qx 'version: 1.2.3'
+
+  kind-ingress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build an image only this runner has
+        run: docker build -t ci-actions-test/hello:dev test/kind
+
+      - id: kind
+        uses: ./kind-ingress
+        with:
+          images: ci-actions-test/hello:dev
+
+      - name: Install a one-pod chart behind an Ingress
+        run: helm install hello test/kind/chart --wait --timeout 120s
+
+      - name: Curl it through the mapped port
+        run: |
+          for _ in $(seq 1 30); do
+            out=$(curl -fsS http://localhost/ 2>&1 || true)
+            [ "$out" = 'hello from kind-ingress' ] && exit 0
+            sleep 2
+          done
+          echo "got: $out"
+          exit 1
+
+      - name: A pod reaches a process on the runner at the gateway
+        env:
+          GATEWAY: ${{ steps.kind.outputs.gateway }}
+        run: |
+          echo "gateway $GATEWAY"
+          mkdir -p "$RUNNER_TEMP/gw"
+          echo 'hello from the runner' >"$RUNNER_TEMP/gw/marker.txt"
+          python3 -m http.server 8999 --bind "$GATEWAY" --directory "$RUNNER_TEMP/gw" >/dev/null 2>&1 &
+          sleep 1
+          out=$(kubectl run probe --image=ci-actions-test/hello:dev --image-pull-policy=Never --restart=Never \
+            --rm -i --quiet --command -- wget -qO- "http://$GATEWAY:8999/marker.txt")
+          [ "$out" = 'hello from the runner' ] || { echo "got: $out"; exit 1; }

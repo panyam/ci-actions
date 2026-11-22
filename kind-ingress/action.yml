@@ -1,0 +1,32 @@
+name: kind-ingress
+description: Creates a kind cluster with ports 80 and 443 on the runner, an ingress controller, and locally built images loaded. At the job's end it prints pods, events and logs, then deletes the cluster.
+
+inputs:
+  images:
+    description: Local images to kind load into the cluster, space or newline separated. A pod uses one with imagePullPolicy IfNotPresent or Never.
+    default: ""
+  name:
+    description: The cluster's name.
+    default: kind
+  node-image:
+    description: The kind node image, which sets the Kubernetes version. Empty means kind's default.
+    default: ""
+  ingress-manifest:
+    description: A URL or path of the ingress controller's manifest. Empty means ingress-nginx's last release, checked against its sha256.
+    default: ""
+  ingress-namespace:
+    description: The namespace of the controller's pod, which the action waits on.
+    default: ingress-nginx
+  ingress-selector:
+    description: The label selector of the controller's pod.
+    default: app.kubernetes.io/component=controller
+
+outputs:
+  gateway:
+    description: The kind network's IPv4 gateway. Pods reach a process on the runner bound to this address, as a fake external service needs.
+
+runs:
+  using: node24
+  main: main.js
+  post: post.js
+  post-if: always()

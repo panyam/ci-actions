@@ -121,6 +121,28 @@ steps:
 
 Outputs are `package` (the `.tgz`), `ref` (e.g. `ghcr.io/owner/charts/agni:1.2.3`) and `digest`. Other inputs are `login` (default `true`), `username` and `password` (default the actor and the job's token), and `plain-http` (default `false`) for a local registry.
 
+## kind-ingress
+
+Creates a kind cluster with ports 80 and 443 mapped to the runner, installs an ingress controller, and loads images the job just built.
+
+```yaml
+- run: docker build -t agni:dev .
+- id: kind
+  uses: panyam/ci-actions/kind-ingress@v0.2.0
+  with:
+    images: agni:dev
+- run: helm install agni deploy/helm/agni --set image.tag=dev --wait
+- run: curl -fsS http://localhost/
+```
+
+- The cluster comes from a pinned kind binary, checked against its sha256. kubectl's context points at it, so later `kubectl` and `helm` steps use it.
+- The controller is ingress-nginx's last release, `controller-v1.15.1`, also checked against its sha256. The project was archived in March 2026. `ingress-manifest` takes another controller's manifest, with `ingress-namespace` and `ingress-selector` naming the pod to wait on.
+- A pod uses a loaded image with `imagePullPolicy: Never` or `IfNotPresent`.
+- The output `gateway` is the kind network's gateway address. A process on the runner bound to it is reachable from pods, as a fake external service needs.
+- At the job's end it prints pods, events and each pod's logs in a collapsed group, then deletes the cluster. A post step can't tell whether the job failed, so it prints them every time.
+
+Other inputs are `name` (default `kind`) and `node-image`, which sets the Kubernetes version (default kind's).
+
 ## npm-publish (reusable workflow)
 
 Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
