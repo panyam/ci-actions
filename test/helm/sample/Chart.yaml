@@ -1,0 +1,6 @@
+apiVersion: v2
+name: sample
+description: A chart for helm-oci-publish's test. The action sets both versions at package time.
+type: application
+version: 0.0.0
+appVersion: "0.0.0"

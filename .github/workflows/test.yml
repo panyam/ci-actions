@@ -199,3 +199,54 @@ jobs:
           n=$(find "$(go env GOCACHE)" -type f | wc -l)
           echo "$n files in the build cache"
           [ "$n" -gt 100 ]
+
+  helm-oci-publish-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/sample
+          version: v1.2.3
+          push: "false"
+
+      - name: Check the package carries the release's version
+        env:
+          PKG: ${{ steps.chart.outputs.package }}
+          REF: ${{ steps.chart.outputs.ref }}
+        run: |
+          [ "$(basename "$PKG")" = sample-1.2.3.tgz ] || { echo "packaged $PKG"; exit 1; }
+          [ -z "$REF" ] || { echo "push: false still pushed $REF"; exit 1; }
+          tar -xzOf "$PKG" sample/Chart.yaml | tee /dev/stderr | grep -qx 'version: 1.2.3'
+          tar -xzOf "$PKG" sample/Chart.yaml | grep -Eqx 'appVersion: "?v1.2.3"?'
+
+  helm-oci-publish-push:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/sample
+          version: 1.2.3
+          registry: oci://localhost:5000/charts
+          login: "false"
+          plain-http: "true"
+
+      - name: Check the outputs name what the registry holds
+        env:
+          REF: ${{ steps.chart.outputs.ref }}
+          DIGEST: ${{ steps.chart.outputs.digest }}
+        run: |
+          echo "ref $REF, digest $DIGEST"
+          [ "$REF" = localhost:5000/charts/sample:1.2.3 ]
+          echo "$DIGEST" | grep -Eqx 'sha256:[0-9a-f]{64}'
+          helm show chart oci://localhost:5000/charts/sample --version 1.2.3 --plain-http | grep -qx 'version: 1.2.3'

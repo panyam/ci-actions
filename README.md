@@ -96,6 +96,31 @@ Restores Go's build cache from the newest earlier run of the same job, and saves
 
 Inputs are `key` (default `default`), naming the job's builds so jobs that build different packages keep separate entries, and `save` (`auto`, `true` or `false`, default `auto`). The output `matched-key` names the entry restored when the run does not save.
 
+## helm-oci-publish
+
+Lints a Helm chart, packages it at the release's version, and pushes it to GHCR as an OCI chart.
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  - uses: panyam/ci-actions/helm-oci-publish@v0.2.0
+    with:
+      chart: deploy/helm/agni
+      version: ${{ github.ref_name }}
+      push: ${{ startsWith(github.ref, 'refs/tags/') }}
+```
+
+- It runs `helm lint` and `helm template` with the chart's default values, then `helm package` and `helm push`.
+- `version` sets the chart's `version` and `appVersion` at package time, so Chart.yaml can keep a placeholder. The chart's version drops a leading `v`, since Helm wants SemVer. `appVersion` keeps it, so a template's default image tag matches an image tagged `v1.2.3`.
+- With no `registry`, the chart goes to `oci://ghcr.io/<owner>/charts`, owner lowercased. It logs in with the job's token, so the job needs `packages: write`.
+- `push: false` lints and packages only, as a pull request would.
+- A chart with `dependencies:` gets `helm dependency build` first.
+
+Outputs are `package` (the `.tgz`), `ref` (e.g. `ghcr.io/owner/charts/agni:1.2.3`) and `digest`. Other inputs are `login` (default `true`), `username` and `password` (default the actor and the job's token), and `plain-http` (default `false`) for a local registry.
+
 ## npm-publish (reusable workflow)
 
 Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
