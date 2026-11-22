@@ -90,6 +90,31 @@ jobs:
         run: |
           if [ "$OUTCOME" != failure ]; then echo "a scan that exited 3 left the step at $OUTCOME"; exit 1; fi
 
+  # A real govulncheck run on a module missing a go.sum hash, as oneauth's modules were at a
+  # release tag (oneauth issue 537). report is false, so this checks the classifier, not the filing.
+  vulncheck-load-failure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: scan
+        continue-on-error: true
+        uses: ./vulncheck
+        with:
+          report: "false"
+          working-directory: test/vulncheck/broken
+          go-version-file: test/vulncheck/broken/go.mod
+          cache-dependency-path: test/vulncheck/broken/go.mod
+
+      - name: Check the log reads as a load failure
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then echo "a module that can't load left the step at $OUTCOME"; exit 1; fi
+          kind=$(node -p "require('./vulncheck/report.js').classify(require('fs').readFileSync(process.env.RUNNER_TEMP + '/vulncheck.log', 'utf8'))")
+          echo "classified as $kind"
+          [ "$kind" = load ]
+
   setup-go-pnpm:
     name: setup-go-pnpm (${{ matrix.pnpm }})
     runs-on: ubuntu-latest

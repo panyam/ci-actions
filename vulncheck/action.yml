@@ -18,7 +18,7 @@ inputs:
     description: Comma-separated labels for the issue the action files.
     default: P1,bug
   title-prefix:
-    description: The filed issue's title starts with this. An open issue with this prefix gets a comment instead of a second issue.
+    description: The filed issue's title starts with this, then says what stopped the scan. An open issue with the same title gets a comment instead of a second issue.
     default: "vulncheck:"
   report:
     description: Set to false to fail without filing or commenting.

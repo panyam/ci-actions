@@ -48,11 +48,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: panyam/ci-actions/vulncheck@v0.1.1
+      - uses: panyam/ci-actions/vulncheck@v0.1.4
 ```
 
 - With no `command`, it runs a pinned `govulncheck ./...` in `working-directory`. A repo with several modules usually has a Makefile target that scans each one, so it passes `command: make vulncheck`.
-- The issue's title starts with `title-prefix` (default `vulncheck:`), and it gets `labels` (default `P1,bug`). An open issue with that prefix gets a comment instead of a second issue.
+- The issue's title starts with `title-prefix` (default `vulncheck:`) and says what stopped the scan. It gets `labels` (default `P1,bug`).
+  - `advisories reachable from a shipped module` when govulncheck reports a vulnerability the code calls. If some packages also failed to load, the body says so.
+  - `the scan could not load packages` when govulncheck couldn't load a module, e.g. `missing go.sum entry`, and reported nothing the code calls.
+  - `the scan failed` for anything else, such as a custom `command` that exits non-zero.
+- An open issue with the same title gets a comment instead of a second issue. A failure of another kind files its own issue.
 - `report: false` fails the job without filing anything.
 - The job needs `issues: write`.
 
