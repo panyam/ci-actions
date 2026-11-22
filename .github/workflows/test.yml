@@ -289,3 +289,48 @@ jobs:
           out=$(kubectl run probe --image=ci-actions-test/hello:dev --image-pull-policy=Never --restart=Never \
             --rm -i --quiet --command -- wget -qO- "http://$GATEWAY:8999/marker.txt")
           [ "$out" = 'hello from the runner' ] || { echo "got: $out"; exit 1; }
+
+  compose-up:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: up
+        uses: ./compose-up
+        with:
+          file: test/compose/compose.yaml
+          env-file: test/compose/test.env
+          wait-url: http://127.0.0.1:18081/
+
+      - name: Check it answers on the env file's port
+        run: '[ "$(curl -fsS http://127.0.0.1:18081/)" = "hello from compose-up" ]'
+
+      # The real post step runs again at the job's end, on a project that's already gone.
+      - name: Tear down as the post step does
+        env:
+          PROJECT: ${{ steps.up.outputs.project }}
+          STATE_args: '["compose","-p","${{ steps.up.outputs.project }}","-f","test/compose/compose.yaml","--env-file","test/compose/test.env"]'
+        run: |
+          docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" | grep -q . || { echo "no volume to remove"; exit 1; }
+          node compose-up/post.js
+          if docker compose ls -a -q | grep -qx "$PROJECT"; then echo "$PROJECT is still up"; exit 1; fi
+          if docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" | grep -q .; then echo "down -v left a volume"; exit 1; fi
+
+  compose-up-timeout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: up
+        continue-on-error: true
+        uses: ./compose-up
+        with:
+          file: test/compose/compose.yaml
+          wait-url: http://127.0.0.1:18089/
+          wait-timeout: "5"
+
+      - name: Check a URL that never answers fails the step
+        env:
+          OUTCOME: ${{ steps.up.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then echo "a dead wait-url left the step at $OUTCOME"; exit 1; fi

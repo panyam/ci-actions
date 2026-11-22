@@ -143,6 +143,27 @@ Creates a kind cluster with ports 80 and 443 mapped to the runner, installs an i
 
 Other inputs are `name` (default `kind`) and `node-image`, which sets the Kubernetes version (default kind's).
 
+## compose-up
+
+Brings up a docker compose project and waits for it to answer. At the job's end it prints the logs and tears the project down.
+
+```yaml
+- uses: panyam/ci-actions/compose-up@v0.2.0
+  with:
+    file: deploy/compose.yaml
+    env-file: deploy/ci.env
+    wait-url: https://127.0.0.1:8443/
+    ca-file: ${{ runner.temp }}/ca.pem
+- run: make e2e
+```
+
+- It polls `wait-url` with curl until it answers 2xx or 3xx. After `wait-timeout` seconds (default 60) it prints each service's logs and fails.
+- `ca-file` is a CA curl trusts while polling, for a server on TLS from a throwaway CA.
+- With no `project`, the name is unique to the run, job and step, so two compose-up steps never share containers or volumes. The output `project` is the name, for later `docker compose -p` steps.
+- At the job's end it prints `ps -a` and the logs in a collapsed group, then runs `down -v --remove-orphans`. It does both even when compose-up's own step failed. A post step can't tell whether the job failed, so it prints the logs every time.
+
+Other inputs are `file` (default `compose.yaml`, or several, one per line) and `services` (default all).
+
 ## npm-publish (reusable workflow)
 
 Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
