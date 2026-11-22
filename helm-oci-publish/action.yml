@@ -1,0 +1,89 @@
+name: helm-oci-publish
+description: Lints and packages a Helm chart at a release's version, then pushes it to an OCI registry, GHCR by default.
+
+inputs:
+  chart:
+    description: The chart's folder, holding Chart.yaml.
+    required: true
+  version:
+    description: The release's version. A leading "v" is dropped for the chart's version, since that must be SemVer. appVersion gets the value as given, so it can match an image tagged "v1.2.3". The chart in the repo can keep a placeholder for both.
+    required: true
+  registry:
+    description: The OCI repository the chart is pushed under. Empty means oci://ghcr.io/<owner>/charts, with the owner lowercased as GHCR wants.
+    default: ""
+  push:
+    description: Set to false to lint and package without logging in or pushing, as a pull request would.
+    default: "true"
+  login:
+    description: Set to false to push without "helm registry login", for a registry that takes anonymous pushes.
+    default: "true"
+  username:
+    description: The registry user.
+    default: ${{ github.actor }}
+  password:
+    description: The registry password. GHCR takes the job's token, which needs packages write.
+    default: ${{ github.token }}
+  plain-http:
+    description: Set to true to push over plain HTTP, for a local registry.
+    default: "false"
+
+outputs:
+  package:
+    description: The packaged chart's .tgz.
+    value: ${{ steps.package.outputs.package }}
+  ref:
+    description: The pushed reference, e.g. ghcr.io/owner/charts/name:1.2.3. Empty when push is false.
+    value: ${{ steps.push.outputs.ref }}
+  digest:
+    description: The pushed chart's digest, sha256:... Empty when push is false.
+    value: ${{ steps.push.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - id: package
+      shell: bash
+      env:
+        CHART: ${{ inputs.chart }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if grep -q '^dependencies:' "$CHART/Chart.yaml"; then helm dependency build "$CHART"; fi
+        helm lint "$CHART"
+        helm template ci "$CHART" >/dev/null
+        dest="$RUNNER_TEMP/helm-oci-publish"
+        rm -rf "$dest"
+        mkdir -p "$dest"
+        helm package "$CHART" --version "${VERSION#v}" --app-version "$VERSION" --destination "$dest"
+        pkg=$(ls "$dest"/*.tgz)
+        echo "package=$pkg" >>"$GITHUB_OUTPUT"
+
+    - id: push
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        OWNER: ${{ github.repository_owner }}
+        LOGIN: ${{ inputs.login }}
+        USERNAME: ${{ inputs.username }}
+        PASSWORD: ${{ inputs.password }}
+        PLAIN_HTTP: ${{ inputs.plain-http }}
+        PKG: ${{ steps.package.outputs.package }}
+      run: |
+        set -euo pipefail
+        registry=${REGISTRY:-oci://ghcr.io/${OWNER,,}/charts}
+        case "$registry" in oci://*) ;; *) echo "registry must start with oci://, got $registry" >&2; exit 1 ;; esac
+        flags=()
+        if [ "$PLAIN_HTTP" = true ]; then flags+=(--plain-http); fi
+        if [ "$LOGIN" = true ]; then
+          host=${registry#oci://}
+          host=${host%%/*}
+          printf '%s' "$PASSWORD" | helm registry login "$host" --username "$USERNAME" --password-stdin "${flags[@]}"
+        fi
+        out="$RUNNER_TEMP/helm-oci-publish-push.txt"
+        helm push "$PKG" "$registry" "${flags[@]}" 2>&1 | tee "$out"
+        ref=$(sed -n 's/^Pushed: *//p' "$out" | tail -1)
+        digest=$(sed -n 's/^Digest: *//p' "$out" | tail -1)
+        if [ -z "$ref" ] || [ -z "$digest" ]; then echo "helm push printed no Pushed: or Digest: line" >&2; exit 1; fi
+        echo "ref=$ref" >>"$GITHUB_OUTPUT"
+        echo "digest=$digest" >>"$GITHUB_OUTPUT"

@@ -199,3 +199,174 @@ jobs:
           n=$(find "$(go env GOCACHE)" -type f | wc -l)
           echo "$n files in the build cache"
           [ "$n" -gt 100 ]
+
+  helm-oci-publish-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/sample
+          version: v1.2.3
+          push: "false"
+
+      - name: Check the package carries the release's version
+        env:
+          PKG: ${{ steps.chart.outputs.package }}
+          REF: ${{ steps.chart.outputs.ref }}
+        run: |
+          [ "$(basename "$PKG")" = sample-1.2.3.tgz ] || { echo "packaged $PKG"; exit 1; }
+          [ -z "$REF" ] || { echo "push: false still pushed $REF"; exit 1; }
+          tar -xzOf "$PKG" sample/Chart.yaml | tee /dev/stderr | grep -qx 'version: 1.2.3'
+          tar -xzOf "$PKG" sample/Chart.yaml | grep -Eqx 'appVersion: "?v1.2.3"?'
+
+  helm-oci-publish-push:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/sample
+          version: 1.2.3
+          registry: oci://localhost:5000/charts
+          login: "false"
+          plain-http: "true"
+
+      - name: Check the outputs name what the registry holds
+        env:
+          REF: ${{ steps.chart.outputs.ref }}
+          DIGEST: ${{ steps.chart.outputs.digest }}
+        run: |
+          echo "ref $REF, digest $DIGEST"
+          [ "$REF" = localhost:5000/charts/sample:1.2.3 ]
+          echo "$DIGEST" | grep -Eqx 'sha256:[0-9a-f]{64}'
+          helm show chart oci://localhost:5000/charts/sample --version 1.2.3 --plain-http | grep -qx 'version: 1.2.3'
+
+  kind-ingress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build an image only this runner has
+        run: docker build -t ci-actions-test/hello:dev test/kind
+
+      - id: kind
+        uses: ./kind-ingress
+        with:
+          images: ci-actions-test/hello:dev
+
+      - name: Install a one-pod chart behind an Ingress
+        run: helm install hello test/kind/chart --wait --timeout 120s
+
+      - name: Curl it through the mapped port
+        run: |
+          for _ in $(seq 1 30); do
+            out=$(curl -fsS http://localhost/ 2>&1 || true)
+            [ "$out" = 'hello from kind-ingress' ] && exit 0
+            sleep 2
+          done
+          echo "got: $out"
+          exit 1
+
+      - name: A pod reaches a process on the runner at the gateway
+        env:
+          GATEWAY: ${{ steps.kind.outputs.gateway }}
+        run: |
+          echo "gateway $GATEWAY"
+          mkdir -p "$RUNNER_TEMP/gw"
+          echo 'hello from the runner' >"$RUNNER_TEMP/gw/marker.txt"
+          python3 -m http.server 8999 --bind "$GATEWAY" --directory "$RUNNER_TEMP/gw" >/dev/null 2>&1 &
+          sleep 1
+          out=$(kubectl run probe --image=ci-actions-test/hello:dev --image-pull-policy=Never --restart=Never \
+            --rm -i --quiet --command -- wget -qO- "http://$GATEWAY:8999/marker.txt")
+          [ "$out" = 'hello from the runner' ] || { echo "got: $out"; exit 1; }
+
+  compose-up:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: up
+        uses: ./compose-up
+        with:
+          file: test/compose/compose.yaml
+          env-file: test/compose/test.env
+          wait-url: http://127.0.0.1:18081/
+
+      - name: Check it answers on the env file's port
+        run: '[ "$(curl -fsS http://127.0.0.1:18081/)" = "hello from compose-up" ]'
+
+      # The real post step runs again at the job's end, on a project that's already gone.
+      - name: Tear down as the post step does
+        env:
+          PROJECT: ${{ steps.up.outputs.project }}
+          STATE_args: '["compose","-p","${{ steps.up.outputs.project }}","-f","test/compose/compose.yaml","--env-file","test/compose/test.env"]'
+        run: |
+          docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" | grep -q . || { echo "no volume to remove"; exit 1; }
+          node compose-up/post.js
+          if docker compose ls -a -q | grep -qx "$PROJECT"; then echo "$PROJECT is still up"; exit 1; fi
+          if docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" | grep -q .; then echo "down -v left a volume"; exit 1; fi
+
+  compose-up-timeout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: up
+        continue-on-error: true
+        uses: ./compose-up
+        with:
+          file: test/compose/compose.yaml
+          wait-url: http://127.0.0.1:18089/
+          wait-timeout: "5"
+
+      - name: Check a URL that never answers fails the step
+        env:
+          OUTCOME: ${{ steps.up.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then echo "a dead wait-url left the step at $OUTCOME"; exit 1; fi
+
+  egress-trap-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Test the trap's start, log and verdict
+        run: node --test test/egress/trap.test.mjs
+
+  # fail is false, so the job passes and the post step only reports. The unit test covers failing.
+  egress-trap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: trap
+        uses: ./egress-trap
+        with:
+          fail: "false"
+
+      - name: Send a request and a CONNECT through the trap
+        env:
+          http_proxy: ${{ steps.trap.outputs.url }}
+          https_proxy: ${{ steps.trap.outputs.url }}
+          LOG: ${{ steps.trap.outputs.log }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://example.invalid/)
+          [ "$code" = 502 ] || { echo "the trap answered $code"; exit 1; }
+          if curl -s -o /dev/null https://example.invalid/; then echo "a CONNECT got through"; exit 1; fi
+          cat "$LOG"
+          grep -qP "^example\.invalid\tGET http://example\.invalid/" "$LOG"
+          grep -qP "^example\.invalid:443\tCONNECT example\.invalid:443" "$LOG"

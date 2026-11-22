@@ -1,0 +1,35 @@
+name: compose-up
+description: Brings up a docker compose project and waits for it to answer. At the job's end it prints the logs and runs down -v.
+
+inputs:
+  file:
+    description: The compose file. Several files, one per line, are passed in order.
+    default: compose.yaml
+  project:
+    description: The compose project name. Empty means a name unique to this run, job and step.
+    default: ""
+  env-file:
+    description: An env file for compose's variable substitution.
+    default: ""
+  services:
+    description: The services to start, space or newline separated. Empty means all of them.
+    default: ""
+  wait-url:
+    description: A URL polled until it answers 2xx or 3xx. Empty means don't wait.
+    default: ""
+  wait-timeout:
+    description: How many seconds to poll wait-url before failing with each service's logs.
+    default: "60"
+  ca-file:
+    description: A CA certificate curl trusts while polling wait-url, for a server on TLS from a throwaway CA.
+    default: ""
+
+outputs:
+  project:
+    description: The compose project name, for later "docker compose -p" steps.
+
+runs:
+  using: node24
+  main: main.js
+  post: post.js
+  post-if: always()

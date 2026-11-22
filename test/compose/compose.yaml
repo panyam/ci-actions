@@ -1,0 +1,12 @@
+# A one-service project for compose-up's test. The named volume lets the test check down -v.
+services:
+  web:
+    image: busybox:1.37
+    command: ["sh", "-c", "cp /src/index.html /www/ && exec httpd -f -p 8080 -h /www"]
+    ports:
+      - "${WEB_PORT:-18080}:8080"
+    volumes:
+      - ./www:/src:ro
+      - data:/www
+volumes:
+  data:

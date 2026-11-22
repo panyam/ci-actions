@@ -96,6 +96,96 @@ Restores Go's build cache from the newest earlier run of the same job, and saves
 
 Inputs are `key` (default `default`), naming the job's builds so jobs that build different packages keep separate entries, and `save` (`auto`, `true` or `false`, default `auto`). The output `matched-key` names the entry restored when the run does not save.
 
+## helm-oci-publish
+
+Lints a Helm chart, packages it at the release's version, and pushes it to GHCR as an OCI chart.
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  - uses: panyam/ci-actions/helm-oci-publish@v0.2.0
+    with:
+      chart: deploy/helm/agni
+      version: ${{ github.ref_name }}
+      push: ${{ startsWith(github.ref, 'refs/tags/') }}
+```
+
+- It runs `helm lint` and `helm template` with the chart's default values, then `helm package` and `helm push`.
+- `version` sets the chart's `version` and `appVersion` at package time, so Chart.yaml can keep a placeholder. The chart's version drops a leading `v`, since Helm wants SemVer. `appVersion` keeps it, so a template's default image tag matches an image tagged `v1.2.3`.
+- With no `registry`, the chart goes to `oci://ghcr.io/<owner>/charts`, owner lowercased. It logs in with the job's token, so the job needs `packages: write`.
+- `push: false` lints and packages only, as a pull request would.
+- A chart with `dependencies:` gets `helm dependency build` first.
+
+Outputs are `package` (the `.tgz`), `ref` (e.g. `ghcr.io/owner/charts/agni:1.2.3`) and `digest`. Other inputs are `login` (default `true`), `username` and `password` (default the actor and the job's token), and `plain-http` (default `false`) for a local registry.
+
+## kind-ingress
+
+Creates a kind cluster with ports 80 and 443 mapped to the runner, installs an ingress controller, and loads images the job just built.
+
+```yaml
+- run: docker build -t agni:dev .
+- id: kind
+  uses: panyam/ci-actions/kind-ingress@v0.2.0
+  with:
+    images: agni:dev
+- run: helm install agni deploy/helm/agni --set image.tag=dev --wait
+- run: curl -fsS http://localhost/
+```
+
+- The cluster comes from a pinned kind binary, checked against its sha256. kubectl's context points at it, so later `kubectl` and `helm` steps use it.
+- The controller is ingress-nginx's last release, `controller-v1.15.1`, also checked against its sha256. The project was archived in March 2026. `ingress-manifest` takes another controller's manifest, with `ingress-namespace` and `ingress-selector` naming the pod to wait on.
+- A pod uses a loaded image with `imagePullPolicy: Never` or `IfNotPresent`.
+- The output `gateway` is the kind network's gateway address. A process on the runner bound to it is reachable from pods, as a fake external service needs.
+- At the job's end it prints pods, events and each pod's logs in a collapsed group, then deletes the cluster. A post step can't tell whether the job failed, so it prints them every time.
+
+Other inputs are `name` (default `kind`) and `node-image`, which sets the Kubernetes version (default kind's).
+
+## compose-up
+
+Brings up a docker compose project and waits for it to answer. At the job's end it prints the logs and tears the project down.
+
+```yaml
+- uses: panyam/ci-actions/compose-up@v0.2.0
+  with:
+    file: deploy/compose.yaml
+    env-file: deploy/ci.env
+    wait-url: https://127.0.0.1:8443/
+    ca-file: ${{ runner.temp }}/ca.pem
+- run: make e2e
+```
+
+- It polls `wait-url` with curl until it answers 2xx or 3xx. After `wait-timeout` seconds (default 60) it prints each service's logs and fails.
+- `ca-file` is a CA curl trusts while polling, for a server on TLS from a throwaway CA.
+- With no `project`, the name is unique to the run, job and step, so two compose-up steps never share containers or volumes. The output `project` is the name, for later `docker compose -p` steps.
+- At the job's end it prints `ps -a` and the logs in a collapsed group, then runs `down -v --remove-orphans`. It does both even when compose-up's own step failed. A post step can't tell whether the job failed, so it prints the logs every time.
+
+Other inputs are `file` (default `compose.yaml`, or several, one per line) and `services` (default all).
+
+## egress-trap
+
+Starts a proxy that logs every request it gets and answers 502. At the job's end it fails the job if anything reached it.
+
+```yaml
+- id: trap
+  uses: panyam/ci-actions/egress-trap@v0.2.0
+- run: hack/exercise_enterprise.sh
+  env:
+    HTTP_PROXY: ${{ steps.trap.outputs.url }}
+    HTTPS_PROXY: ${{ steps.trap.outputs.url }}
+    NO_PROXY: 127.0.0.1,localhost
+```
+
+- A server that promises to reach only the hosts it names sends everything else through the proxy. `NO_PROXY` lists the hosts it may reach.
+- Each line of the log is the host, a tab, then the request line, or `CONNECT host:443` for HTTPS.
+- At the job's end it stops the proxy. If the log isn't empty, it fails the job with one error per host.
+- `fail: false` reports without failing, for a job that checks the log itself.
+- `address` (default `127.0.0.1:0`) sets where it listens, with port 0 picking a free one. To trap traffic from containers, pass a network's gateway, such as kind-ingress's `gateway` output, with a fixed port.
+
+Outputs are `url`, for `HTTP_PROXY` and `HTTPS_PROXY`, and `log`, the log's path.
+
 ## npm-publish (reusable workflow)
 
 Publishes one npm package through npm trusted publishing, so the caller needs no `NPM_TOKEN`. It moved here from servicekit, with the same inputs, so a caller changes only its `uses:` line.
