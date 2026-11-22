@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 const report = createRequire(import.meta.url)('../../vulncheck/report.js');
 
@@ -26,7 +27,7 @@ function fakeGitHub(openIssues) {
   };
 }
 
-const args = (github, log = 'GO-2026-0001 found') =>
+const args = (github, log = 'Vulnerability #1: GO-2026-0001 found\n\nYour code is affected by 1 vulnerability from the Go standard library.') =>
   ({ github, context, log, command: 'make vulncheck', titlePrefix: 'vulncheck:', labels: ['P1', 'bug'] });
 
 test('files an issue when none with the prefix is open', async () => {
@@ -52,7 +53,7 @@ test('comments on the open issue instead of filing a second one', async () => {
 });
 
 test('ignores a pull request whose title has the prefix', async () => {
-  const gh = fakeGitHub([{ number: 8, title: 'vulncheck: bump x', pull_request: {} }]);
+  const gh = fakeGitHub([{ number: 8, title: 'vulncheck: advisories reachable from a shipped module', pull_request: {} }]);
   assert.deepEqual(await report(args(gh)), { filed: 99 });
 });
 
@@ -62,4 +63,58 @@ test('keeps only the last 8000 characters of the log', async () => {
   const body = gh.calls.created[0].body;
   assert.ok(body.includes('T'.repeat(8000)));
   assert.ok(!body.includes('H'));
+});
+
+const fixture = (name) => readFileSync(new URL(`./logs/${name}.txt`, import.meta.url), 'utf8');
+
+test('classifies govulncheck logs by what stopped the scan', () => {
+  assert.equal(report.classify(fixture('findings')), 'findings');
+  assert.equal(report.classify(fixture('load')), 'load');
+  assert.equal(report.classify(fixture('mixed')), 'findings');
+  assert.equal(report.classify(fixture('other')), 'other');
+  assert.equal(report.classify(''), 'other');
+});
+
+test('a load failure files an issue that says the scan could not load packages', async () => {
+  const gh = fakeGitHub([]);
+  assert.deepEqual(await report(args(gh, fixture('load'))), { filed: 99 });
+  const [issue] = gh.calls.created;
+  assert.equal(issue.title, 'vulncheck: the scan could not load packages');
+  assert.match(issue.body, /missing go\.sum entry/);
+});
+
+test('findings keep the advisories title', async () => {
+  const gh = fakeGitHub([]);
+  await report(args(gh, fixture('findings')));
+  assert.equal(gh.calls.created[0].title, 'vulncheck: advisories reachable from a shipped module');
+  assert.doesNotMatch(gh.calls.created[0].body, /also failed to load/);
+});
+
+test('findings with load errors keep the advisories title and say some packages failed to load', async () => {
+  const gh = fakeGitHub([]);
+  await report(args(gh, fixture('mixed')));
+  assert.equal(gh.calls.created[0].title, 'vulncheck: advisories reachable from a shipped module');
+  assert.match(gh.calls.created[0].body, /Some packages also failed to load/);
+});
+
+test('a failure with neither files an issue that says the scan failed', async () => {
+  const gh = fakeGitHub([]);
+  await report(args(gh, fixture('other')));
+  assert.equal(gh.calls.created[0].title, 'vulncheck: the scan failed');
+});
+
+test('a load failure files its own issue while an advisories issue is open', async () => {
+  const gh = fakeGitHub([{ number: 7, title: 'vulncheck: advisories reachable from a shipped module' }]);
+  assert.deepEqual(await report(args(gh, fixture('load'))), { filed: 99 });
+  assert.equal(gh.calls.commented.length, 0);
+});
+
+test('findings file their own issue while a load-failure issue is open', async () => {
+  const gh = fakeGitHub([{ number: 9, title: 'vulncheck: the scan could not load packages' }]);
+  assert.deepEqual(await report(args(gh, fixture('findings'))), { filed: 99 });
+});
+
+test('a load failure comments on the open load-failure issue', async () => {
+  const gh = fakeGitHub([{ number: 9, title: 'vulncheck: the scan could not load packages' }]);
+  assert.deepEqual(await report(args(gh, fixture('load'))), { commented: 9 });
 });

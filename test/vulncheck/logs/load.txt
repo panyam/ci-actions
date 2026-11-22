@@ -1,0 +1,33 @@
+== auth
+govulncheck: loading packages: 
+There are errors with the provided package patterns:
+
+main.go:8:2: missing go.sum entry for module providing package golang.org/x/text/language (imported by example.com/broken); to add:
+	go get example.com/broken
+/home/runner/work/app/main.go:8:2: could not import golang.org/x/text/language (invalid package name: "")
+
+For details on package patterns, see https://pkg.go.dev/cmd/go#hdr-Package_lists_and_patterns.
+
+exit status 1
+== store
+govulncheck: loading packages: 
+There are errors with the provided package patterns:
+
+main.go:8:2: missing go.sum entry for module providing package golang.org/x/text/language (imported by example.com/broken); to add:
+	go get example.com/broken
+/home/runner/work/app/main.go:8:2: could not import golang.org/x/text/language (invalid package name: "")
+
+For details on package patterns, see https://pkg.go.dev/cmd/go#hdr-Package_lists_and_patterns.
+
+exit status 1
+== web
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 0 vulnerabilities in packages you import and 2
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.
+make: *** [Makefile:40: vulncheck] Error 1
