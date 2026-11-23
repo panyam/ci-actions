@@ -110,7 +110,7 @@ permissions:
   packages: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  - uses: panyam/ci-actions/helm-oci-publish@v0.1.4
+  - uses: panyam/ci-actions/helm-oci-publish@v0.1.5
     with:
       chart: deploy/helm/agni
       version: ${{ github.ref_name }}
