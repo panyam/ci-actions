@@ -8,6 +8,9 @@ inputs:
   version:
     description: The release's version. A leading "v" is dropped for the chart's version, since that must be SemVer. appVersion gets the value as given, so it can match an image tagged "v1.2.3". The chart in the repo can keep a placeholder for both.
     required: true
+  values:
+    description: A values file, relative to the workspace, that helm lint and helm template use on top of the chart's values.yaml. It's for a chart that won't render without values a deployment supplies. helm package ignores it. When the file sits inside the chart folder, list it in the chart's .helmignore, or the step fails, since the package would carry it. Empty means lint and template see only the chart's values.yaml.
+    default: ""
   registry:
     description: The OCI repository the chart is pushed under. Empty means oci://ghcr.io/<owner>/charts, with the owner lowercased as GHCR wants.
     default: ""
@@ -46,16 +49,35 @@ runs:
       env:
         CHART: ${{ inputs.chart }}
         VERSION: ${{ inputs.version }}
+        VALUES: ${{ inputs.values }}
       run: |
         set -euo pipefail
         if grep -q '^dependencies:' "$CHART/Chart.yaml"; then helm dependency build "$CHART"; fi
-        helm lint "$CHART"
-        helm template ci "$CHART" >/dev/null
+        vflags=()
+        if [ -n "$VALUES" ]; then
+          [ -f "$VALUES" ] || { echo "values file $VALUES not found" >&2; exit 1; }
+          vflags=(-f "$VALUES")
+        fi
+        helm lint "$CHART" "${vflags[@]}"
+        helm template ci "$CHART" "${vflags[@]}" >/dev/null
         dest="$RUNNER_TEMP/helm-oci-publish"
         rm -rf "$dest"
         mkdir -p "$dest"
         helm package "$CHART" --version "${VERSION#v}" --app-version "$VERSION" --destination "$dest"
         pkg=$(ls "$dest"/*.tgz)
+        if [ -n "$VALUES" ]; then
+          chart_abs=$(cd "$CHART" && pwd -P)
+          values_abs=$(cd "$(dirname "$VALUES")" && pwd -P)/$(basename "$VALUES")
+          case "$values_abs" in
+            "$chart_abs"/*)
+              inner=$(tar -tzf "$pkg" | head -1 | cut -d/ -f1)/${values_abs#"$chart_abs"/}
+              if tar -tzf "$pkg" | grep -qxF "$inner"; then
+                echo "the package carries the values file as $inner. List it in $CHART/.helmignore." >&2
+                exit 1
+              fi
+              ;;
+          esac
+        fi
         echo "package=$pkg" >>"$GITHUB_OUTPUT"
 
     - id: push
