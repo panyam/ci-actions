@@ -247,6 +247,59 @@ jobs:
           tar -xzOf "$PKG" sample/Chart.yaml | tee /dev/stderr | grep -qx 'version: 1.2.3'
           tar -xzOf "$PKG" sample/Chart.yaml | grep -Eqx 'appVersion: "?v1.2.3"?'
 
+  helm-oci-publish-values:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/required
+          version: 1.2.3
+          values: test/helm/required/ci-values.yaml
+          push: "false"
+
+      - name: Check the package carries only the chart's own values
+        env:
+          PKG: ${{ steps.chart.outputs.package }}
+        run: |
+          tar -tzf "$PKG" | tee /dev/stderr | { ! grep -q ci-values.yaml; }
+          tar -xzOf "$PKG" required/values.yaml | cmp - test/helm/required/values.yaml
+
+  helm-oci-publish-required-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        continue-on-error: true
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/required
+          version: 1.2.3
+          push: "false"
+
+      - name: Check a chart with required values fails without a values file
+        run: '[ "${{ steps.chart.outcome }}" = failure ]'
+
+  helm-oci-publish-values-leak-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: chart
+        continue-on-error: true
+        uses: ./helm-oci-publish
+        with:
+          chart: test/helm/leaky
+          version: 1.2.3
+          values: test/helm/leaky/ci-values.yaml
+          push: "false"
+
+      - name: Check a values file inside the chart, not in .helmignore, fails the step
+        run: '[ "${{ steps.chart.outcome }}" = failure ]'
+
   helm-oci-publish-push:
     runs-on: ubuntu-latest
     services:

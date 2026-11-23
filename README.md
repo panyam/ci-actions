@@ -110,7 +110,7 @@ permissions:
   packages: write
 steps:
   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-  - uses: panyam/ci-actions/helm-oci-publish@v0.1.3
+  - uses: panyam/ci-actions/helm-oci-publish@v0.1.4
     with:
       chart: deploy/helm/agni
       version: ${{ github.ref_name }}
@@ -122,6 +122,7 @@ steps:
 - With no `registry`, the chart goes to `oci://ghcr.io/<owner>/charts`, owner lowercased. It logs in with the job's token, so the job needs `packages: write`.
 - `push: false` lints and packages only, as a pull request would.
 - A chart with `dependencies:` gets `helm dependency build` first.
+- `values` names a values file for `helm lint` and `helm template`, for a chart that uses `required` or `fail`. `helm package` ignores it, so the published chart carries only its own `values.yaml`. If the file sits inside the chart folder, list it in the chart's `.helmignore`. Otherwise the step fails rather than publish it.
 
 Outputs are `package` (the `.tgz`), `ref` (e.g. `ghcr.io/owner/charts/agni:1.2.3`) and `digest`. Other inputs are `login` (default `true`), `username` and `password` (default the actor and the job's token), and `plain-http` (default `false`) for a local registry.
 
