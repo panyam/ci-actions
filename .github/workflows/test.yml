@@ -158,23 +158,34 @@ jobs:
           esac
 
   # The publish workflow end to end, publishing with --dry-run. The fixtures aren't on npm, so the
-  # job gets past the already-published check to the publish step.
+  # job gets past the already-published check to the publish step. The pnpm fixture has no
+  # packageManager pin and pnpm-pinned has one. Neither sets pnpm-version, and each checks which
+  # pnpm ran (#22).
   npm-publish:
-    name: npm-publish (${{ matrix.package-manager }})
+    name: npm-publish (${{ matrix.fixture }})
     strategy:
       fail-fast: false
       matrix:
-        package-manager: [npm, pnpm]
+        include:
+          - fixture: npm
+            package-manager: npm
+            pnpm: 'true'
+          - fixture: pnpm
+            package-manager: pnpm
+            pnpm: '[[ "$(pnpm --version)" == 12.* ]]'
+          - fixture: pnpm-pinned
+            package-manager: pnpm
+            pnpm: '[ "$(pnpm --version)" = 12.11.2 ]'
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/npm-publish.yml
     with:
-      working-directory: test/npm-publish/${{ matrix.package-manager }}
+      working-directory: test/npm-publish/${{ matrix.fixture }}
       package-manager: ${{ matrix.package-manager }}
       tag: v0.0.0
       dry-run: true
-      test-command: node -e "if (require('./index.js') !== 1) process.exit(1)"
+      test-command: node -e "if (require('./index.js') !== 1) process.exit(1)" && ${{ matrix.pnpm }}
 
   # One job builds and saves under a key unique to this run, and the next restores it. The second
   # job does not save, so it reports the entry it restored.
