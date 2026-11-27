@@ -213,5 +213,6 @@ jobs:
 - It refuses a tarball with `.test.` files in it, and skips a version npm already has.
 - On npm, the package's trusted publisher names the caller's repo and workflow file, not this one: `npm trust github <package> --repo <owner>/<repo> --file publish-npm.yml --allow-publish`.
 - `package-manager: pnpm` installs with `pnpm install --frozen-lockfile --ignore-scripts`. Publishing always uses npm.
+- An empty `pnpm-version` uses the `packageManager` pin in `working-directory`'s package.json, and pnpm 12 when there is none. Pass a version only for a package with no pin, since pnpm/action-setup refuses two.
 
-Other inputs are `node-version` (default `24`), `pnpm-version` (default `12`), and two for testing, `tag` and `dry-run`.
+Other inputs are `node-version` (default `24`), `pnpm-version`, and two for testing, `tag` and `dry-run`.

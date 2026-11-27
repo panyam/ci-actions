@@ -45,9 +45,9 @@ on:
         type: string
         default: npm
       pnpm-version:
-        description: pnpm version, when package-manager is pnpm.
+        description: pnpm version, when package-manager is pnpm. Empty means the packageManager field of working-directory's package.json, and pnpm 12 when there is none. pnpm/action-setup refuses a version here when package.json pins one too.
         type: string
-        default: '12'
+        default: ''
       tag:
         description: The tag compared with package.json's version. Empty means the tag that started the run. The tests here set it, since a pull request has no tag.
         type: string
@@ -73,10 +73,22 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pick the pnpm version
+        id: pnpm
+        if: inputs.package-manager == 'pnpm'
+        env:
+          WANT: ${{ inputs.pnpm-version }}
+        run: |
+          pinned="$(node -p "require('./package.json').packageManager || ''")"
+          if [ -n "$WANT" ]; then v="$WANT"
+          elif [[ "$pinned" == pnpm@* ]]; then v=""; echo "package.json pins $pinned"
+          else v=12
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
       - if: inputs.package-manager == 'pnpm'
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: ${{ inputs.pnpm-version }}
+          version: ${{ steps.pnpm.outputs.version }}
           package_json_file: ${{ inputs.working-directory }}/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
