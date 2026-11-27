@@ -158,19 +158,26 @@ jobs:
           esac
 
   # The publish workflow end to end, publishing with --dry-run. The fixtures aren't on npm, so the
-  # job gets past the already-published check to the publish step.
+  # job gets past the already-published check to the publish step. The pnpm fixture has no
+  # packageManager pin and pnpm-pinned has one, and neither sets pnpm-version (#22).
   npm-publish:
-    name: npm-publish (${{ matrix.package-manager }})
+    name: npm-publish (${{ matrix.fixture }})
     strategy:
       fail-fast: false
       matrix:
-        package-manager: [npm, pnpm]
+        include:
+          - fixture: npm
+            package-manager: npm
+          - fixture: pnpm
+            package-manager: pnpm
+          - fixture: pnpm-pinned
+            package-manager: pnpm
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/npm-publish.yml
     with:
-      working-directory: test/npm-publish/${{ matrix.package-manager }}
+      working-directory: test/npm-publish/${{ matrix.fixture }}
       package-manager: ${{ matrix.package-manager }}
       tag: v0.0.0
       dry-run: true
