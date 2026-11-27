@@ -204,7 +204,7 @@ permissions:
   id-token: write
 jobs:
   publish:
-    uses: panyam/ci-actions/.github/workflows/npm-publish.yml@v0.1.1
+    uses: panyam/ci-actions/.github/workflows/npm-publish.yml@v0.1.6
     with:
       working-directory: ts
 ```
